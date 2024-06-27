@@ -1,0 +1,124 @@
+---
+title: "DataWrangling"
+output: html_document
+date: "2024-06-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Import}
+library(tidyverse)
+library(tibble)
+library(dplyr)
+library(googlesheets4)
+library(stringr)
+```
+
+```{r Data Retrival}
+#Global Google Sheet -------------------------------
+# First Time Do this (Authenticate and sign into google account)
+# gs4_auth()
+
+# global_sheet <- gs4_create("Prosody Data") #Create Sheet (Only first time)
+global_sheet <- gs4_find("Prosody Data") #Finds Sheet
+
+#Getting data -----------------------------------
+getwd() #Check Workspace has to be update each session
+setwd("C:/Users/souri/Documents/Aresty/Data") #Set to your workspace with sessions and script.r
+
+#Sample Testing Sessions
+#session-6626aa16a802ab63d82290e5-data
+#session-66293134a802ab63d822924b-data
+
+data <- read.csv("session-6626aa16a802ab63d82290e5-data/results.csv", header=TRUE, sep = ",") #Reads CSV File with new data
+#prevData <- read.csv("saved_data.csv", header = TRUE, sep = ",") #local system method
+prevData <- read_sheet(ss = global_sheet, sheet = "New Name Data") #Reads existing data from google sheets
+
+#Convert to Tibble
+tbl <- as_tibble(data) #Allows for easier testing/printing
+```
+
+```{r Name Remaping}
+#Generating Unique Names ----------------------------
+
+#Set starting number when empty
+#file_info <- file.info("saved_data.csv") file_info$size<=100 (LOCAL SYSTEM)
+if(nrow(prevData) == 0){ #Starts from 0 when its a new file
+  starting_num = 0
+  utbl <- tbl #utbl is a table with all new participants; Initially its everything in your original tbl file as we have data stored yet
+} else {
+  #Get starting number utilizing previous data
+  starting_num <- prevData |>
+    summarise(max_Num = max(New_Name)) |>
+    pull(max_Num)
+  
+  #Gets values in tbl that aren't already accounted for
+  unique_to_tbl <- setdiff(tbl$participant_id, prevData$participant_id) #Gets new data people participant ids
+  view(unique_to_tbl) #Allows you to see what new participants were added
+  utbl <- subset(tbl, participant_id %in% unique_to_tbl) #Gives us the subset with only new people
+}
+
+#print(length(utbl)) #TESTING
+
+if(length(utbl)!=0){ #Ensures that utbl isn't empty
+  ctbl <- utbl |> 
+    mutate( #Assigning a new name for each participant
+      New_Name = dense_rank(participant_id) + starting_num, #Gives it a number with relation to starting number generated previously
+      .before = 1 #Position of this column
+    ) |>
+    arrange(New_Name) #Orders the name
+  new_data <- TRUE
+} else {
+  new_data <- FALSE
+}
+```
+
+```{r Metadata Column Breakdown}
+#Click Metadeta Analysis of response_name -------------------------
+if(new_data){
+  newRows <- ctbl |> 
+    rowwise() |> #Ensures your reponse_name string doesn't hold every single string value within the column and goes row by row
+    mutate( #Takes your metadata in reponse_name and gives each section a new respective column between a:l 
+      List_Num = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[2], ""),
+      Unique_Trial = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[3], ""),
+      Expt_Fill = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[4], ""),
+      Sent_Type = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[5], ""),
+      Matrix_Embed = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[6], ""),
+      Foil = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[7], ""),
+      Gender_Animal = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[8], ""),
+      Animal = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[9], ""),
+      Agent_Patient = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[10], ""),
+      Verb = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[11], ""),
+      R_L = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[12], ""),
+    )
+}
+```
+
+
+```{r Final Process and Output}
+#Combining new data with old data ----------------------
+if(new_data){
+  combined_data <- rbind(prevData, newRows) #Adds new data to existing data
+} else{
+  combined_data <- prevData #Else keep current data if nothing new
+}
+
+
+#OUTPUT --------------
+#local system
+#setwd("C:/Users/souri/Documents/Aresty/GlobalSystem")
+write.csv(combined_data, file="saved_data.csv", row.names = FALSE)
+
+#global system, specifies what sheet
+sheet_write(combined_data, ss = global_sheet, sheet = "New Name Data")
+```
+
+```{r Testing}
+#TESTING -------------------
+#Make empty csv file
+#write.csv("", file="saved_data.csv", row.names = FALSE)
+#Clears google sheet
+#range_clear(ss = global_sheet, sheet = "New Name Data")
+```
