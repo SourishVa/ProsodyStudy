@@ -14,6 +14,9 @@ library(tibble)
 library(dplyr)
 library(googlesheets4)
 library(stringr)
+library(tuneR)
+library(av)
+library(purrr)
 ```
 
 ```{r Data Retrival}
@@ -32,7 +35,11 @@ setwd("C:/Users/souri/Documents/Aresty/Data") #Set to your workspace with sessio
 #session-6626aa16a802ab63d82290e5-data
 #session-66293134a802ab63d822924b-data
 
-data <- read.csv("session-6626aa16a802ab63d82290e5-data/results.csv", header=TRUE, sep = ",") #Reads CSV File with new data
+#Rename your session here
+#session_id = "session-66293134a802ab63d822924b-data"
+session_id <- readline(prompt = "Session File Name: ")
+
+data <- read.csv(paste0(session_id,"/results.csv"), header=TRUE, sep = ",") #Reads CSV File with new data
 #prevData <- read.csv("saved_data.csv", header = TRUE, sep = ",") #local system method
 prevData <- read_sheet(ss = global_sheet, sheet = "New Name Data") #Reads existing data from google sheets
 
@@ -88,19 +95,236 @@ if(new_data){
       Matrix_Embed = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[6], ""),
       Foil = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[7], ""),
       Gender_Animal = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[8], ""),
-      Animal = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[9], ""),
-      Agent_Patient = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[10], ""),
-      Verb = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[11], ""),
-      R_L = ifelse(!is.na(response_name) && nchar(response_name)>40, unlist(str_split(response_name, pattern = "_"))[12], ""),
+      Animal = ifelse(!is.na(response_name) && nchar(response_name)>40, 
+                      ifelse(unlist(str_split(response_name, pattern = "_"))[9]=="female", unlist(str_split(response_name, pattern = "_"))[10], unlist(str_split(response_name, pattern = "_"))[9]), ""), #Flamingo messess up here
+      Agent_Patient = ifelse(!is.na(response_name) && nchar(response_name)>40, 
+                      ifelse(unlist(str_split(response_name, pattern = "_"))[9]=="female", unlist(str_split(response_name, pattern = "_"))[11], unlist(str_split(response_name, pattern = "_"))[10]), ""),
+      Verb = ifelse(!is.na(response_name) && nchar(response_name)>40, 
+                      ifelse(unlist(str_split(response_name, pattern = "_"))[9]=="female", unlist(str_split(response_name, pattern = "_"))[12], unlist(str_split(response_name, pattern = "_"))[11]), ""),
+      R_L = ifelse(!is.na(response_name) && nchar(response_name)>40, 
+                      ifelse(unlist(str_split(response_name, pattern = "_"))[9]=="female", unlist(str_split(response_name, pattern = "_"))[13], unlist(str_split(response_name, pattern = "_"))[12]), ""),
     )
 }
+```
+
+```{r Audio Wrangling, include=FALSE}
+
+if(new_data){
+  setwd(paste0("C:/Users/souri/Documents/Aresty/Data/",session_id))
+
+  #Creates new folder to store WAV files
+  if(!dir.exists("WAV_Files")){
+    dir.create("WAV_Files")
+  } else{
+  print("Folder Already Exists")
+  }
+
+  #WAV File Creation------------
+  #Renames all WAV functions
+  wav_added <- newRows |>
+    mutate(
+      ogg_file_path = ifelse(response_type=="audio-response",paste0("audio/",response_value),""),
+      WAV_name = ifelse(response_type=="choice-response"&&Unique_Trial!="",paste0(New_Name,"_",Unique_Trial,".wav"),""), 
+    )
+
+  wav_added$WAV_name <- c(wav_added$WAV_name[-1], NA)
+
+  wav_added <- wav_added |>
+    mutate(
+      wav_file_path = paste0("WAV_Files/",WAV_name)
+    )
+
+  pure_ogg <- wav_added[grepl("\\.ogg$", wav_added$response_value), ] #rows with only .ogg ending
+  pure_ogg <- filter(pure_ogg, stimuli_presented!="Produce_Tutorial_Sentence_1") #Production Rows only
+  pure_ogg <- filter(pure_ogg, stimuli_presented!="Produce_Tutorial_Sentence_3") #Production Rows only
+  pure_ogg <- filter(pure_ogg, stimuli_presented!="Produce_Tutorial_Sentence_4") #Production Rows only
+
+
+  #Function to Convert Every OGG file to WAV File
+  convert_ogg_to_wav <- function(ogg_path, wav_path) {
+    av_audio_convert(ogg_path, wav_path)
+  }
+
+  #Go through every pair and run it through this conversion function
+  walk2(pure_ogg$ogg_file_path, pure_ogg$wav_file_path, convert_ogg_to_wav)
+
+  #CHECK TO SEE IF ALL FILES EXIST
+  # checkFile <- function(wav_path) {
+  #   if (file.exists(wav_path)) {
+  #   message("Good")
+  # } else {
+  #   message("Conversion failed.", wav_path)
+  # }
+  # }
+  # 
+  # pure_ogg |>
+  #   mutate(
+  #     setwd(paste0("C:/Users/souri/Documents/Aresty/Data/",session_id)),
+  #     checkFile(wav_file_path)
+  #   )
+
+setwd(paste0("C:/Users/souri/Documents/Aresty/Data/",session_id))
+#Getting Time for each Wav File
+time_wav <- wav_added |>
+  rowwise() |>
+  mutate(
+    Time = ifelse(list(grepl("production_template",trial_template)),(av_media_info(wav_file_path)$duration)*1000,NA)
+  )
+
+#Final Table with only WAV Names
+final_wav <- time_wav |>
+  select(-wav_file_path) |>
+  select(-ogg_file_path)
+}
+
+```
+
+```{r Data Pivoting}
+#Preperation  ------------
+#Get rid of Intro Data
+data_preped <- final_wav |>
+  filter(!(trial_template %in% c("intro", "experiment_intro")))
+
+#Label Data
+data_preped <- data_preped |>
+  rowwise() |>
+  mutate(
+    class = case_when(
+      grepl("tutorial",trial_template) ~ "Tutorial",
+      grepl("preview_template",trial_template) ~ "Experiment",
+      grepl("choice_template",trial_template) ~ "Experiment",
+      grepl("production_template",trial_template) ~ "Experiment",
+      grepl("background",trial_template) ~ "Background",
+      TRUE ~ "NA"
+    ),
+    pivot_stimuli = case_when(
+      grepl("preview",trial_template) ~ "Preview",
+      grepl("choice",trial_template) ~ "Choice",
+      grepl("production",trial_template) ~ "Production"
+    ),
+    pivot_response = case_when(
+      grepl("audio",response_type) ~ "OGG_File",
+      grepl("choice",response_type) ~ "Participant_Choice",
+    ),
+    pivot_response_rt = case_when(
+      grepl("audio",response_type) ~ "Production_response_rt",
+      grepl("choice",response_type) ~ "Choice_response_rt",
+      TRUE ~ "NAN"
+    ),
+    pivot_response_rt_values = case_when(
+      grepl("choice",response_type) ~ response_rt,
+      (grepl("audio",response_type) && !is.na(response_rt)) ~ response_rt,
+      (grepl("audio",response_type) && is.na(response_rt)) ~ -100,
+      TRUE ~ NA
+    ),
+    pivot_response_name = case_when(
+      grepl("audio",response_type) ~ "Production_response_name",
+      grepl("choice",response_type) ~ "Production_response_choice",
+      TRUE ~ "NANA"
+    ),
+    pivot_trial_duration = case_when(
+      grepl("preview",trial_template) ~ "Preview_Time",
+      grepl("choice",trial_template) ~ "Choice_Time",
+      grepl("production",trial_template) ~ "Production_Time"
+    )
+  )
+
+#Creating group # for each trial (Help with Grouping)
+data_preped <- data_preped |>
+  ungroup() |>
+  group_by(
+    New_Name, class
+  ) |>
+  mutate(
+    group_num = rep(1:(n()/3 + (n() %% 3 != 0)), each = 3)[1:n()]
+  )
+
+data_preped |> ungroup()
+data_preped <- data_preped |> filter(class == "Experiment") #Testing with only experiment
+
+view(data_preped)
+
+#Pivoting Data-----------
+pivoted_data <- data_preped |>
+  group_by(New_Name, class, group_num) |>
+  pivot_wider(
+    names_from = pivot_stimuli,
+    values_from = stimuli_presented
+  ) |>
+  pivot_wider(
+    names_from = pivot_response,
+    values_from = response_value
+  ) |>
+  pivot_wider(
+    names_from = pivot_response_rt,
+    values_from = pivot_response_rt_values
+  ) |>
+  pivot_wider(
+    names_from = pivot_response_name,
+    values_from = response_name
+  ) |>
+  pivot_wider(
+    names_from = pivot_trial_duration,
+    values_from = trial_duration
+  )
+
+view(pivoted_data)
+
+# Collaspsing Data -----------
+collapsed_data <- pivoted_data |> group_by(New_Name, class, group_num) |> summarize(
+      expt_id = unique(expt_id[expt_id!=""]),
+      group_id = unique(group_id[group_id!=""]),
+      network_error_repeat = unique(network_error_repeat[network_error_repeat!=""]),
+      participant_id = unique(participant_id[participant_id!=""]),
+      participation_duration = unique(participation_duration[participation_duration!=""]),
+      response_correct = unique(response_correct[response_correct!=""]),
+      Production_response_name = unique(Production_response_name[!is.na(Production_response_name)]),
+      Production_response_choice = unique(Production_response_choice[!is.na(Production_response_choice)]),
+      Production_response_rt = unique(Production_response_rt[!is.na(Production_response_rt)]),
+      Choice_response_rt = unique(Choice_response_rt[!is.na(Choice_response_rt)]),
+      response_target = unique(response_target[response_target!=""]),
+      Participant_Choice = unique(Participant_Choice[!is.na(Participant_Choice)]),
+      OGG_File = unique(OGG_File[!is.na(OGG_File)]),
+      session_id = unique(session_id[session_id!=""]),
+      session_start_time = unique(session_start_time[session_start_time!=""]),
+      Preview = unique(Preview[!is.na(Preview)]),
+      Production = unique(Production[!is.na(Production)]),
+      Choice = unique(Choice[!is.na(Choice)]),
+      Preview_Time = unique(Preview_Time[!is.na(Preview_Time)]),
+      Choice_Time = unique(Choice_Time[!is.na(Choice_Time)]),
+      Production_Time = unique(Production_Time[!is.na(Production_Time)]),
+      List_Num = unique(List_Num[List_Num!=""]),
+      Unique_Trial = unique(Unique_Trial[Unique_Trial!=""]),
+      Expt_Fill = unique(Expt_Fill[Expt_Fill!=""]),
+      Sent_Type = unique(Sent_Type[Sent_Type!=""]),
+      Matrix_Embed = unique(Matrix_Embed[Matrix_Embed!=""]),
+      Foil = unique(Foil[Foil!=""]),
+      Gender_Animal = unique(Gender_Animal[Gender_Animal!=""]),
+      Animal = unique(Animal[Animal!=""]),
+      Agent_Patient = unique(Agent_Patient[Agent_Patient!=""]),
+      Verb = unique(Verb[Verb!=""]),
+      R_L = unique(R_L[R_L!=""]),
+      WAV_name = unique(WAV_name[WAV_name!=""]),
+      Time = unique(Time[!is.na(Time)]),
+    )
+view(collapsed_data)
+  
+# Production_response_rt = unique(Production_response_rt[!is.na(Production_response_rt)]),
+
+  # summarize(
+  #   List_Num = unique(List_Num[List_Num != ""]),
+  #   WAV_name = unique(WAV_name[WAV_name != ""]),
+  #   )
+
+view(collapsed_data)
+
 ```
 
 
 ```{r Final Process and Output}
 #Combining new data with old data ----------------------
 if(new_data){
-  combined_data <- rbind(prevData, newRows) #Adds new data to existing data
+  combined_data <- rbind(prevData, final_wav) #Adds new data to existing data
 } else{
   combined_data <- prevData #Else keep current data if nothing new
 }
@@ -120,5 +344,5 @@ sheet_write(combined_data, ss = global_sheet, sheet = "New Name Data")
 #Make empty csv file
 #write.csv("", file="saved_data.csv", row.names = FALSE)
 #Clears google sheet
-#range_clear(ss = global_sheet, sheet = "New Name Data")
+# range_clear(ss = global_sheet, sheet = "New Name Data")
 ```
