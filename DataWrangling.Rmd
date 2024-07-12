@@ -179,7 +179,7 @@ final_wav <- time_wav |>
 
 ```
 
-```{r Data Pivoting}
+```{r Data Pivoting, include=FALSE}
 #Preperation  ------------
 #Get rid of Intro Data
 data_preped <- final_wav |>
@@ -215,7 +215,7 @@ data_preped <- data_preped |>
       grepl("choice",response_type) ~ response_rt,
       (grepl("audio",response_type) && !is.na(response_rt)) ~ response_rt,
       (grepl("audio",response_type) && is.na(response_rt)) ~ -100,
-      TRUE ~ NA
+      TRUE ~ -NA
     ),
     pivot_response_name = case_when(
       grepl("audio",response_type) ~ "Production_response_name",
@@ -240,6 +240,7 @@ data_preped <- data_preped |>
   )
 
 data_preped |> ungroup()
+data_background <- data_preped |> filter(class == "Background") #Store background data for later
 data_preped <- data_preped |> filter(class == "Experiment") #Testing with only experiment
 
 view(data_preped)
@@ -307,24 +308,92 @@ collapsed_data <- pivoted_data |> group_by(New_Name, class, group_num) |> summar
       WAV_name = unique(WAV_name[WAV_name!=""]),
       Time = unique(Time[!is.na(Time)]),
     )
-view(collapsed_data)
-  
-# Production_response_rt = unique(Production_response_rt[!is.na(Production_response_rt)]),
 
-  # summarize(
-  #   List_Num = unique(List_Num[List_Num != ""]),
-  #   WAV_name = unique(WAV_name[WAV_name != ""]),
-  #   )
+#Gets rid of negative value in Production_reponse_rt and swaps it with NA values
+collapsed_data$Production_response_rt[collapsed_data$Production_response_rt == -100] <- NA_real_
 
 view(collapsed_data)
 
+
+#Background Prep
+view(data_background)
+background_final <- data_background |> ungroup() |>
+  pivot_wider(
+    names_from = trial_template,
+    values_from = response_value
+  ) |>
+  select(
+    New_Name,
+    `background_10-3`,
+    background_11,
+    background_12,
+    background_13,
+    background_14,
+    background_1,
+    background_2,
+    background_3,
+    background_4,
+    background_5,
+    background_6,
+    background_7,
+    `background_6-1`,
+    background_9,
+    `background_10-1`,
+    `background_14-1`,
+    `background_14-2`,
+    `background_14-3`,
+    background_25,
+    `background_14-1-1`,
+    `background_14-4`,
+    background_SONA,
+    background_6A,
+    background_6B
+  )
+view(background_final)
+
+background_final_collapsed <- background_final |> 
+  group_by(New_Name) |>
+  summarize(
+    `background_10-3` = unique(`background_10-3`[!is.na(`background_10-3`)]),
+    background_11 = unique(background_11[!is.na(background_11)]),
+    background_12 = unique(background_12[!is.na(background_12)]),
+    background_13 = unique(background_13[!is.na(background_13)]),
+    background_14 = unique(background_14[!is.na(background_14)]),
+    background_1 = unique(background_1[!is.na(background_1)]),
+    background_2 = unique(background_2[!is.na(background_2)]),
+    background_3 = unique(background_3[!is.na(background_3)]),
+    background_4 = unique(background_4[!is.na(background_4)]),
+    background_5 = unique(background_5[!is.na(background_5)]),
+    background_6 = unique(background_6[!is.na(background_6)]),
+    background_7 = unique(background_7[!is.na(background_7)]),
+    `background_6-1` = unique(`background_6-1`[!is.na(`background_6-1`)]),
+    background_9 = unique(background_9[!is.na(background_9)]),
+    `background_10-1` = unique(`background_10-1`[!is.na(`background_10-1`)]),
+    `background_14-1` = unique(`background_14-1`[!is.na(`background_14-1`)]),
+    `background_14-2` = unique(`background_14-2`[!is.na(`background_14-2`)]),
+    `background_14-3` = unique(`background_14-3`[!is.na(`background_14-3`)]),
+    background_25 = unique(background_25[!is.na(background_25)]),
+    `background_14-1-1` = unique(`background_14-1-1`[!is.na(`background_14-1-1`)]),
+    `background_14-4` = unique(`background_14-4`[!is.na(`background_14-4`)]),
+    background_SONA = unique(background_SONA[!is.na(background_SONA)]),
+    background_6A = unique(background_6A[!is.na(background_6A)]),
+    background_6B = unique(background_6B[!is.na(background_6B)]),
+  ) |>
+  rename(
+    Gender = background_13,
+    Age = background_14
+  )
+view(background_final_collapsed)
+
+combined_background_experimental_data <- left_join(collapsed_data, background_final_collapsed, by = "New_Name")
+view(combined_background_experimental_data)
 ```
 
 
 ```{r Final Process and Output}
 #Combining new data with old data ----------------------
 if(new_data){
-  combined_data <- rbind(prevData, final_wav) #Adds new data to existing data
+  combined_data <- rbind(prevData, combined_background_experimental_data) #Adds new data to existing data
 } else{
   combined_data <- prevData #Else keep current data if nothing new
 }
@@ -342,7 +411,7 @@ sheet_write(combined_data, ss = global_sheet, sheet = "New Name Data")
 ```{r Testing}
 #TESTING -------------------
 #Make empty csv file
-#write.csv("", file="saved_data.csv", row.names = FALSE)
+# write.csv("", file="saved_data.csv", row.names = FALSE)
 #Clears google sheet
 # range_clear(ss = global_sheet, sheet = "New Name Data")
 ```
