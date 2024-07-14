@@ -196,7 +196,7 @@ data_preped <- data_preped |>
       grepl("production_template",trial_template) ~ "Experiment",
       grepl("background",trial_template) ~ "Background",
       TRUE ~ "NA"
-    ),
+    ), #Helper Columns for later pivot_wider()
     pivot_stimuli = case_when(
       grepl("preview",trial_template) ~ "Preview",
       grepl("choice",trial_template) ~ "Choice",
@@ -230,6 +230,7 @@ data_preped <- data_preped |>
   )
 
 #Creating group # for each trial (Help with Grouping)
+#Essentially creates the following grouping system Participant -> Type (Intro, Experiment, Background) -> Trial #
 data_preped <- data_preped |>
   ungroup() |>
   group_by(
@@ -272,6 +273,7 @@ pivoted_data <- data_preped |>
 view(pivoted_data)
 
 # Collaspsing Data -----------
+#Essentially part where 3 rows become 1 row (removes all white space, redundant fields, and non necesarry columns)
 collapsed_data <- pivoted_data |> group_by(New_Name, class, group_num) |> summarize(
       expt_id = unique(expt_id[expt_id!=""]),
       group_id = unique(group_id[group_id!=""]),
@@ -314,15 +316,15 @@ collapsed_data$Production_response_rt[collapsed_data$Production_response_rt == -
 
 view(collapsed_data)
 
-
+#Background--------
 #Background Prep
 view(data_background)
 background_final <- data_background |> ungroup() |>
-  pivot_wider(
+  pivot_wider( #Takes background name trial_template and populates it with response_value
     names_from = trial_template,
     values_from = response_value
   ) |>
-  select(
+  select( #Filters out what values are needed from resulting table
     New_Name,
     `background_10-3`,
     background_11,
@@ -351,6 +353,7 @@ background_final <- data_background |> ungroup() |>
   )
 view(background_final)
 
+#Collapses Background
 background_final_collapsed <- background_final |> 
   group_by(New_Name) |>
   summarize(
@@ -385,6 +388,7 @@ background_final_collapsed <- background_final |>
   )
 view(background_final_collapsed)
 
+#Combines Background data with collapsed data
 combined_background_experimental_data <- left_join(collapsed_data, background_final_collapsed, by = "New_Name")
 view(combined_background_experimental_data)
 ```
