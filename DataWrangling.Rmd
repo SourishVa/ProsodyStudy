@@ -63,7 +63,7 @@ if(nrow(prevData) == 0){ #Starts from 0 when its a new file
   
   #Gets values in tbl that aren't already accounted for
   unique_to_tbl <- setdiff(tbl$participant_id, prevData$participant_id) #Gets new data people participant ids
-  view(unique_to_tbl) #Allows you to see what new participants were added
+  #view(unique_to_tbl) #Allows you to see what new participants were added
   utbl <- subset(tbl, participant_id %in% unique_to_tbl) #Gives us the subset with only new people
 }
 
@@ -134,12 +134,21 @@ if(new_data){
       wav_file_path = paste0("WAV_Files/",WAV_name)
     )
 
-  pure_ogg <- wav_added[grepl("\\.ogg$", wav_added$response_value), ] #rows with only .ogg ending
+  #Takes all ogg files
+  pure_ogg <- wav_added[grepl(("\\.ogg$"), wav_added$response_value),] #rows with only .ogg ending
   pure_ogg <- filter(pure_ogg, stimuli_presented!="Produce_Tutorial_Sentence_1") #Production Rows only
   pure_ogg <- filter(pure_ogg, stimuli_presented!="Produce_Tutorial_Sentence_3") #Production Rows only
   pure_ogg <- filter(pure_ogg, stimuli_presented!="Produce_Tutorial_Sentence_4") #Production Rows only
 
 
+  #Takes all mp4 files
+  pure_mp4 <- wav_added[grepl(("\\.mp4$"), wav_added$response_value),] #rows with only .ogg ending
+  pure_mp4 <- filter(pure_mp4, stimuli_presented!="Produce_Tutorial_Sentence_1") #Production Rows only
+  pure_mp4 <- filter(pure_mp4, stimuli_presented!="Produce_Tutorial_Sentence_3") #Production Rows only
+  pure_mp4 <- filter(pure_mp4, stimuli_presented!="Produce_Tutorial_Sentence_4") #Production Rows only
+  
+  pure_ogg <- rbind(pure_ogg, pure_mp4)
+  
   #Function to Convert Every OGG file to WAV File
   convert_ogg_to_wav <- function(ogg_path, wav_path) {
     av_audio_convert(ogg_path, wav_path)
@@ -244,7 +253,7 @@ data_preped |> ungroup()
 data_background <- data_preped |> filter(class == "Background") #Store background data for later
 data_preped <- data_preped |> filter(class == "Experiment") #Testing with only experiment
 
-view(data_preped)
+#view(data_preped)
 
 #Pivoting Data-----------
 pivoted_data <- data_preped |>
@@ -270,7 +279,7 @@ pivoted_data <- data_preped |>
     values_from = trial_duration
   )
 
-view(pivoted_data)
+#view(pivoted_data)
 
 # Collaspsing Data -----------
 #Essentially part where 3 rows become 1 row (removes all white space, redundant fields, and non necesarry columns)
@@ -314,11 +323,11 @@ collapsed_data <- pivoted_data |> group_by(New_Name, class, group_num) |> summar
 #Gets rid of negative value in Production_reponse_rt and swaps it with NA values
 collapsed_data$Production_response_rt[collapsed_data$Production_response_rt == -100] <- NA_real_
 
-view(collapsed_data)
+#view(collapsed_data)
 
 #Background--------
 #Background Prep
-view(data_background)
+#view(data_background)
 background_final <- data_background |> ungroup() |>
   pivot_wider( #Takes background name trial_template and populates it with response_value
     names_from = trial_template,
@@ -351,7 +360,7 @@ background_final <- data_background |> ungroup() |>
     background_6A,
     background_6B
   )
-view(background_final)
+#view(background_final)
 
 #Collapses Background
 background_final_collapsed <- background_final |> 
@@ -383,21 +392,91 @@ background_final_collapsed <- background_final |>
     background_6B = unique(background_6B[!is.na(background_6B)]),
   ) |>
   rename(
+    Native_Lang = background_1,
+    Other_Lang_Speak = background_2,
+    Other_Lang_Read = background_3,
+    Mother_Lang = background_4,
+    Father_Lang = background_5,
+    Home_Lang = background_6,
+    Hearing_Loss = background_7,
+    Glasses_Contacts = background_9,
+    Dominant_Hand = background_11,
+    Highest_Education = background_12,
     Gender = background_13,
-    Age = background_14
+    Age = background_14,
+    English_Comfort_Speak = background_6A,
+    English_Comfort_Read = background_6B,
+    Residency = `background_6-1`,
+    Writen_Lang_Disorder = `background_10-1`,
+    Spoken_Lang_Disorder = `background_10-3`,
+    Diagnosis_1 = `background_14-1`,
+    Diagnosis_2 = `background_14-2`,
+    Diagnosis_3 = `background_14-3`,
+    Potential_Diagnosis = `background_14-4`,
+    Diagnosis_4 = `background_14-1-1`
+  ) |>
+  select(
+    -background_25,
+    -background_SONA
   )
-view(background_final_collapsed)
+
+#view(background_final_collapsed)
 
 #Combines Background data with collapsed data
 combined_background_experimental_data <- left_join(collapsed_data, background_final_collapsed, by = "New_Name")
-view(combined_background_experimental_data)
+#view(combined_background_experimental_data)
 ```
 
+```{r Columun Cleanup}
+cleaned_data <- combined_background_experimental_data |>
+  mutate(
+    Gender_Corrected = case_when(
+      grepl("Female", Gender) ~ "Female",
+      grepl("FEMALE", Gender) ~ "Female",
+      grepl("female", Gender) ~ "Female",
+      grepl("Woman", Gender) ~ "Female",
+      grepl("girl", Gender) ~ "Female",
+      grepl("Male", Gender) ~ "Male",
+      grepl("male", Gender) ~ "Male",
+      grepl("Man", Gender) ~ "Male",
+      grepl("nonbinary", Gender) ~ "Other"
+    ),
+    .after = Gender,)
+
+cleaned_data <- cleaned_data |>
+  mutate(
+    Native_Lang_Corrected = case_when(
+      grepl("Hindi-English", Native_Lang) ~ "Bilingual",
+      grepl("telugu", Native_Lang) ~ "Telugu",
+      grepl("Telugu", Native_Lang) ~ "Telugu",
+      grepl("english", Native_Lang) ~ "English",
+      grepl("English", Native_Lang) ~ "English",
+      grepl("spanish", Native_Lang) ~ "Spanish",
+      grepl("Spanish", Native_Lang) ~ "Spanish",
+      grepl("urdu", Native_Lang) ~ "Urdu",
+      grepl("Urdu", Native_Lang) ~ "Urdu",
+      grepl("polish", Native_Lang) ~ "Polish",
+      grepl("Polish", Native_Lang) ~ "Polish",
+      grepl("punjabi", Native_Lang) ~ "Punjabi",
+      grepl("Punjabi", Native_Lang) ~ "Punjabi",
+      grepl("arabic", Native_Lang) ~ "Arabic",
+      grepl("Arabic", Native_Lang) ~ "Arabic",
+      grepl("gujarati", Native_Lang) ~ "Gujarati",
+      grepl("Gujarati", Native_Lang) ~ "Gujarati",
+      grepl("korean", Native_Lang) ~ "Korean",
+      grepl("Korean", Native_Lang) ~ "Korean",
+      grepl("russian", Native_Lang) ~ "Russian",
+      grepl("Russian", Native_Lang) ~ "Russian",
+    ),
+    .after = Native_Lang
+  )
+  # view(cleaned_data)
+```
 
 ```{r Final Process and Output}
 #Combining new data with old data ----------------------
 if(new_data){
-  combined_data <- rbind(prevData, combined_background_experimental_data) #Adds new data to existing data
+  combined_data <- rbind(prevData, cleaned_data) #Adds new data to existing data
 } else{
   combined_data <- prevData #Else keep current data if nothing new
 }
@@ -410,6 +489,31 @@ write.csv(combined_data, file="saved_data.csv", row.names = FALSE)
 
 #global system, specifies what sheet
 sheet_write(combined_data, ss = global_sheet, sheet = "New Name Data")
+```
+
+```{r Diagnosis Finder}
+#Creates a combined string with all diagnosis making finding value easier
+temp_diag <- combined_data |>
+  rowwise() |>
+  mutate(
+    Combined_Diagnosis = paste0(Diagnosis_1, Diagnosis_2, Diagnosis_3, Diagnosis_4)
+    )
+
+diagnosis_name <- readline(prompt = "What diagnosis column do you want? NONE to quit.")
+
+while(diagnosis_name!="NONE"){
+  temp_diag <- temp_diag |>
+  mutate(
+    Contains_Value = grepl(diagnosis_name, Combined)
+  ) |>
+  rename(
+    !!diagnosis_name := Contains_Value
+  )
+  diagnosis_name <- readline(prompt = "What diagnosis column do you want? NONE to quit.")
+}
+
+sheet_write(temp_diag, ss = global_sheet, sheet = "Conditions")
+#view(temp_diag)
 ```
 
 ```{r Testing}
