@@ -1,6 +1,8 @@
 ---
 title: "DataWrangling"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 date: "2024-06-27"
 ---
 
@@ -8,7 +10,7 @@ date: "2024-06-27"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r Import}
+```{r Import, eval = FALSE, include=FALSE}
 library(tidyverse)
 library(tibble)
 library(dplyr)
@@ -17,9 +19,12 @@ library(stringr)
 library(tuneR)
 library(av)
 library(purrr)
+library(lme4)
+library(lmerTest)
+options(tinytex.verbose = TRUE)
 ```
 
-```{r Data Retrival}
+```{r Data Retrival, eval = FALSE, echo=FALSE}
 #Global Google Sheet -------------------------------
 # First Time Do this (Authenticate and sign into google account)
 # gs4_auth()
@@ -36,18 +41,18 @@ setwd("C:/Users/souri/Documents/Aresty/Data") #Set to your workspace with sessio
 #session-66293134a802ab63d822924b-data
 
 #Rename your session here
-#session_id = "session-66293134a802ab63d822924b-data"
+# session_id = "session-66293134a802ab63d822924b-data" #Use for when knitting
 session_id <- readline(prompt = "Session File Name: ")
 
 data <- read.csv(paste0(session_id,"/results.csv"), header=TRUE, sep = ",") #Reads CSV File with new data
-#prevData <- read.csv("saved_data.csv", header = TRUE, sep = ",") #local system method
+# prevData <- read.csv("saved_data.csv", header = TRUE, sep = ",") #local system method
 prevData <- read_sheet(ss = global_sheet, sheet = "New Name Data") #Reads existing data from google sheets
 
 #Convert to Tibble
 tbl <- as_tibble(data) #Allows for easier testing/printing
 ```
 
-```{r Name Remaping}
+```{r Name Remaping, eval = FALSE, echo=FALSE}
 #Generating Unique Names ----------------------------
 
 #Set starting number when empty
@@ -69,7 +74,7 @@ if(nrow(prevData) == 0){ #Starts from 0 when its a new file
 
 #print(length(utbl)) #TESTING
 
-if(length(utbl)!=0){ #Ensures that utbl isn't empty
+if(nrow(utbl)!=0){ #Ensures that utbl isn't empty
   ctbl <- utbl |> 
     mutate( #Assigning a new name for each participant
       New_Name = dense_rank(participant_id) + starting_num, #Gives it a number with relation to starting number generated previously
@@ -82,7 +87,7 @@ if(length(utbl)!=0){ #Ensures that utbl isn't empty
 }
 ```
 
-```{r Metadata Column Breakdown}
+```{r Metadata Column Breakdown, eval = FALSE, echo=FALSE}
 #Click Metadeta Analysis of response_name -------------------------
 if(new_data){
   newRows <- ctbl |> 
@@ -107,7 +112,7 @@ if(new_data){
 }
 ```
 
-```{r Audio Wrangling, include=FALSE}
+```{r Audio Wrangling, include=FALSE, eval = FALSE, echo=FALSE}
 
 if(new_data){
   setwd(paste0("C:/Users/souri/Documents/Aresty/Data/",session_id))
@@ -188,7 +193,8 @@ final_wav <- time_wav |>
 
 ```
 
-```{r Data Pivoting, include=FALSE}
+```{r Data Pivoting, eval = FALSE, echo=FALSE}
+if(new_data){
 #Preperation  ------------
 #Get rid of Intro Data
 data_preped <- final_wav |>
@@ -425,9 +431,10 @@ background_final_collapsed <- background_final |>
 #Combines Background data with collapsed data
 combined_background_experimental_data <- left_join(collapsed_data, background_final_collapsed, by = "New_Name")
 #view(combined_background_experimental_data)
+}
 ```
 
-```{r Columun Cleanup}
+```{r Columun Cleanup, eval = FALSE, echo=FALSE}
 cleaned_data <- combined_background_experimental_data |>
   mutate(
     Gender_Corrected = case_when(
@@ -473,7 +480,7 @@ cleaned_data <- cleaned_data |>
   # view(cleaned_data)
 ```
 
-```{r Final Process and Output}
+```{r Final Process and Output, eval = FALSE, echo=FALSE}
 #Combining new data with old data ----------------------
 if(new_data){
   combined_data <- rbind(prevData, cleaned_data) #Adds new data to existing data
@@ -491,7 +498,7 @@ write.csv(combined_data, file="saved_data.csv", row.names = FALSE)
 sheet_write(combined_data, ss = global_sheet, sheet = "New Name Data")
 ```
 
-```{r Diagnosis Finder}
+```{r Diagnosis Finder, eval = FALSE, echo=FALSE}
 #Creates a combined string with all diagnosis making finding value easier
 temp_diag <- combined_data |>
   rowwise() |>
@@ -516,7 +523,395 @@ sheet_write(temp_diag, ss = global_sheet, sheet = "Conditions")
 #view(temp_diag)
 ```
 
-```{r Testing}
+```{r Intro Time Reaction Plots, echo = FALSE}
+setwd("C:/Users/souri/Documents/Aresty/ProsodyStudy")
+combined_data <- read.csv("Summer2024SessionData.csv", header = TRUE, sep = ",")
+
+#Matrix vs Embedded Intro Time for Reflexive -------- 
+filter_temp <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Reflex"
+  ) |>
+  filter(
+    Preview_Time < 45000 
+  )
+ggplot(filter_temp, aes(x = Matrix_Embed, y = log(Preview_Time))) +
+  geom_violin(trim = FALSE, fill = "darkgreen") +
+  geom_boxplot(alpha=.1) +
+  stat_summary(fun = "mean", geom = "point", color = "black") +
+  facet_wrap(~Gender_Corrected) +
+  labs(title="Intro Time for Matrix vs Embedded Sentences (Reflexive)",
+       x="Sentence Type",
+       y="Density") + 
+  theme_minimal()
+
+# ANOVA SIMPLE
+filter_temp$Gender_Corrected <- as.factor(filter_temp$Gender_Corrected)
+filter_temp$Matrix_Embed <- as.factor(filter_temp$Matrix_Embed)
+
+simple_anova <- aov(Preview_Time ~ Gender_Corrected * Matrix_Embed, data = filter_temp)
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(Preview_Time ~ Gender_Corrected * Matrix_Embed + (1 | New_Name), data = filter_temp)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+
+#Matrix vs Embedded Intro Time for Pronoun ---------
+filter_temp <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Pronoun"
+  ) |>
+  filter(
+    Preview_Time < 45000 
+  )
+ggplot(filter_temp, aes(x = Matrix_Embed, y = log(Preview_Time))) +
+  geom_violin(trim = FALSE, fill = "darkgreen") +
+  geom_boxplot(alpha=.1) +
+  stat_summary(fun = "mean", geom = "point", color = "black") +
+  facet_wrap(~Gender_Corrected) +
+  labs(title="Intro Time for Matrix vs Embedded Sentences (Pronoun)",
+       x="Preview Time",
+       y="Density") + 
+  theme_minimal()
+
+# ANOVA SIMPLE
+filter_temp$Gender_Corrected <- as.factor(filter_temp$Gender_Corrected)
+filter_temp$Matrix_Embed <- as.factor(filter_temp$Matrix_Embed)
+
+simple_anova <- aov(Preview_Time ~ Gender_Corrected * Matrix_Embed, data = filter_temp)
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(Preview_Time ~ Gender_Corrected * Matrix_Embed + (1 | New_Name), data = filter_temp)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+
+```
+
+```{r Choice Reaction Time Plots, echo=FALSE}
+setwd("C:/Users/souri/Documents/Aresty/ProsodyStudy")
+#Comparing Embed and Matrix in Reflexive Sentences ---------
+filter_temp <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Reflex"
+  ) |>
+  filter(
+    Choice_response_rt < 45000 
+  )
+
+ggplot(filter_temp, aes(x = Matrix_Embed, y = log(Choice_response_rt))) +
+  geom_violin(trim = FALSE, fill="darkgreen") +
+  geom_boxplot(alpha=.1) +
+  stat_summary(fun = "mean", geom = "point", color = "black") +
+  facet_wrap(~Gender_Corrected) +
+  labs(title="Reaction Time for Matrix vs Embedded Sentences (Reflexive)",
+       x="Sentence Type",
+       y="Reaction Time") + 
+  theme_minimal()
+
+#ANOVA SIMPLE
+filter_temp$Gender_Corrected <- as.factor(filter_temp$Gender_Corrected)
+filter_temp$Matrix_Embed <- as.factor(filter_temp$Matrix_Embed)
+
+simple_anova <- aov(Choice_response_rt ~ Gender_Corrected * Matrix_Embed, data = filter_temp)
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(Choice_response_rt ~ Gender_Corrected * Matrix_Embed + (1 | New_Name), data = filter_temp)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+
+#Comparing Embed and Matrix in Pronoun Sentences -------
+filter_temp <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Pronoun"
+  ) |>
+  filter(
+    Choice_response_rt < 45000 
+  )
+
+ggplot(filter_temp, aes(x = Matrix_Embed, y = log(Choice_response_rt))) +
+  geom_violin(trim = FALSE, fill="darkgreen") +
+  geom_boxplot(alpha=.1) +
+  stat_summary(fun = "mean", geom = "point", color = "black") +
+  facet_wrap(~Gender_Corrected) +
+  labs(title="Reaction Time for Matrix vs Embedded Sentences (Pronoun)",
+       x="Sentence Type",
+       y="Reaction Time") + 
+  theme_minimal()
+
+#ANOVA SIMPLE
+filter_temp$Gender_Corrected <- as.factor(filter_temp$Gender_Corrected)
+filter_temp$Matrix_Embed <- as.factor(filter_temp$Matrix_Embed)
+
+simple_anova <- aov(Choice_response_rt ~ Gender_Corrected * Matrix_Embed, data = filter_temp)
+
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(Choice_response_rt ~ Gender_Corrected * Matrix_Embed + (1 | New_Name), data = filter_temp)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+```
+
+```{r Accuracy Plots, echo = FALSE}
+#General Pronoun vs Reflex ---------
+mean_stats <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Reflex" | Sent_Type == "Pronoun"
+  ) |>
+  group_by(
+    Sent_Type
+  ) |>
+  mutate(
+    binary_true = ifelse(response_correct, 1, 0)
+  )
+  
+mean_stats <- mean_stats |>
+  summarise(
+    mean_value = mean(binary_true),
+    se_value = sd(binary_true)/sqrt(n())
+  )
+
+ggplot(mean_stats, aes(x=Sent_Type, y=mean_value, fill = Sent_Type)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_errorbar(aes(ymin=mean_value - se_value, ymax = mean_value + se_value)) +
+  labs(title="Accuracy for Pronoun vs Reflex",
+       x="Sentence Type",
+       y="Mean") + 
+  theme_minimal()
+
+#ANOVA DATA
+mixed_sample_data <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Pronoun" | Sent_Type == "Pronoun"
+  )|>
+  mutate(
+    binary_true = ifelse(response_correct, 1, 0)
+  )
+
+#ANOVA SIMPLE
+mixed_sample_data$Matrix_Embed <- as.factor(mixed_sample_data$Matrix_Embed)
+
+simple_anova <- aov(binary_true ~ Matrix_Embed, data = mixed_sample_data)
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(binary_true ~ Matrix_Embed + (1 | New_Name), data = mixed_sample_data)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+
+
+#Pronoun Accuracy Matrix vs Embeded ---------
+mean_stats <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Pronoun"
+  ) |>
+  group_by(
+    Matrix_Embed,
+    Gender_Corrected
+  ) |>
+  mutate(
+    binary_true = ifelse(response_correct, 1, 0)
+  )
+  
+mean_stats <- mean_stats |>
+  summarise(
+    mean_value = mean(binary_true),
+    se_value = sd(binary_true)/sqrt(n())
+  )
+
+ggplot(mean_stats, aes(x=Gender_Corrected, y=mean_value, fill = Matrix_Embed)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_errorbar(aes(ymin=mean_value - se_value, ymax = mean_value + se_value), position = position_dodge()) +
+  labs(title="Accuracy for Pronoun (Matrix vs Embedded)",
+       x="Sentence Type",
+       y="Mean") + 
+  theme_minimal()
+
+
+#ANOVA DATA
+mixed_sample_data <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Pronoun"
+  )|>
+  mutate(
+    binary_true = ifelse(response_correct, 1, 0)
+  )
+
+#ANOVA SIMPLE
+mixed_sample_data$Matrix_Embed <- as.factor(mixed_sample_data$Matrix_Embed)
+mixed_sample_data$Gender_Corrected <- as.factor(mixed_sample_data$Gender_Corrected)
+
+simple_anova <- aov(binary_true ~ Matrix_Embed * Gender_Corrected, data = mixed_sample_data)
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(binary_true ~ Gender_Corrected * Matrix_Embed + (1 | New_Name), data = mixed_sample_data)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+
+#Reflex Accuracy Matrix vs Embedded -----------
+mean_stats <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Reflex"
+  ) |>
+  group_by(
+    Matrix_Embed,
+    Gender_Corrected
+  ) |>
+  mutate(
+    binary_true = ifelse(response_correct, 1, 0)
+  )
+  
+mean_stats <- mean_stats |>
+  summarise(
+    mean_value = mean(binary_true),
+    se_value = sd(binary_true)/sqrt(n())
+  )
+
+ggplot(mean_stats, aes(x=Gender_Corrected, y=mean_value, fill = Matrix_Embed)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_errorbar(aes(ymin=mean_value - se_value, ymax = mean_value + se_value), position = position_dodge()) +
+  labs(title="Accuracy for Reflex (Matrix vs Embedded)",
+       x="Sentence Type",
+       y="Mean") + 
+  theme_minimal()
+
+#ANOVA DATA
+mixed_sample_data <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Reflex"
+  )|>
+  mutate(
+    binary_true = ifelse(response_correct, 1, 0)
+  )
+
+#ANOVA SIMPLE
+mixed_sample_data$Matrix_Embed <- as.factor(mixed_sample_data$Matrix_Embed)
+mixed_sample_data$Gender_Corrected <- as.factor(mixed_sample_data$Gender_Corrected)
+
+simple_anova <- aov(binary_true ~ Matrix_Embed * Gender_Corrected, data = mixed_sample_data)
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(binary_true ~ Gender_Corrected * Matrix_Embed + (1 | New_Name), data = mixed_sample_data)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+```
+
+```{r Onset time Plots, echo=FALSE}
+
+setwd("C:/Users/souri/Documents/Aresty/ProsodyStudy")
+
+#Reflex (Matrix vs Embed) ------------
+filter_temp <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Reflex"
+  ) |>
+  filter(
+    Production_response_rt < 45000 
+  )
+ggplot(filter_temp, aes(x = Matrix_Embed, y = log(Production_response_rt))) +
+  geom_violin(trim = FALSE, fill = "darkgreen") +
+  geom_boxplot(alpha=.1) +
+  stat_summary(fun = "mean", geom = "point", color = "black") +
+  facet_wrap(~Gender_Corrected) +
+  labs(title="Onset Time for Matrix vs Embedded Sentences (Reflexive)",
+       x="Sentence Type",
+       y="Onset Time") + 
+  theme_minimal()
+
+#ANOVA SIMPLE
+filter_temp$Gender_Corrected <- as.factor(filter_temp$Gender_Corrected)
+filter_temp$Matrix_Embed <- as.factor(filter_temp$Matrix_Embed)
+
+simple_anova <- aov(Production_response_rt ~ Gender_Corrected * Matrix_Embed, data = filter_temp)
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(Production_response_rt ~ Gender_Corrected * Matrix_Embed + (1 | New_Name), data = filter_temp)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+
+#Pronoun (Matrix vs Embed) -------
+filter_temp <- combined_data |>
+  filter(
+    Expt_Fill == "Expt"
+  ) |>
+  filter(
+    Sent_Type == "Pronoun"
+  ) |>
+  filter(
+    Production_response_rt < 45000 
+  )
+ggplot(filter_temp, aes(x = Matrix_Embed, y = log(Production_response_rt))) +
+  geom_violin(trim = FALSE, fill = "darkgreen") +
+  geom_boxplot(alpha=.1) +
+  stat_summary(fun = "mean", geom = "point", color = "black") +
+  facet_wrap(~Gender_Corrected) +
+  labs(title="Onset Time for Matrix vs Embedded Sentences (Pronoun)",
+       x="Sentence Type",
+       y="Onset Time") + 
+  theme_minimal()
+
+#ANOVA SIMPLE
+filter_temp$Gender_Corrected <- as.factor(filter_temp$Gender_Corrected)
+filter_temp$Matrix_Embed <- as.factor(filter_temp$Matrix_Embed)
+
+simple_anova <- aov(Production_response_rt ~ Gender_Corrected * Matrix_Embed, data = filter_temp)
+results <- summary(simple_anova)
+print(results)
+
+#Anova Mixed Sample
+mixed_model <- lmer(Production_response_rt ~ Gender_Corrected * Matrix_Embed + (1 | New_Name), data = filter_temp)
+mixed_model_results <- summary(mixed_model)
+print(mixed_model_results)
+```
+
+```{r Testing, echo=FALSE}
 #TESTING -------------------
 #Make empty csv file
 # write.csv("", file="saved_data.csv", row.names = FALSE)
